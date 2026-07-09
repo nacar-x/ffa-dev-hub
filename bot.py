@@ -37,9 +37,13 @@ SYSTEM_PROMPT = (
     "about Minecraft server development, especially Skript and plugins. "
     "Answer questions about Skript syntax, plugin usage/config, and general Minecraft "
     "server admin topics clearly and concisely, using code blocks for Skript/YAML when helpful. "
-    "If 'server resource context' is provided below, prioritize it and mention the resource "
-    "by author/link when relevant. If nothing relevant is provided, just answer from your own "
-    "knowledge. Keep answers focused, no unnecessary repetition."
+    "If a 'Server channel directory' is provided, use it to answer questions about where a "
+    "channel is located or what categories/channels exist. "
+    "If 'Server resource context' is provided, prioritize it for questions about specific posted "
+    "resources, and mention the resource by author/link when relevant. "
+    "If neither is relevant to the question, just answer from your own knowledge — never say you "
+    "don't have access to channels or can't view the server; use the directory/context given above "
+    "instead. Keep answers focused, no unnecessary repetition."
 )
 
 
@@ -54,9 +58,34 @@ def build_context(question: str) -> str:
     return "\n\n".join(blocks)
 
 
-async def ask_ai(question: str) -> str:
+def build_channel_directory(guild: discord.Guild | None) -> str:
+    """Lists the server's actual categories and text channels, so the bot can
+    answer navigation questions like 'where is #skripts?' using live data
+    instead of the indexed resource content."""
+    if guild is None:
+        return ""
+    lines = []
+    for category, channels in guild.by_category():
+        cat_name = category.name if category else "No Category"
+        visible = [c for c in channels if isinstance(c, discord.TextChannel)]
+        if not visible:
+            continue
+        lines.append(f"{cat_name}: " + ", ".join(f"#{c.name}" for c in visible))
+    return "\n".join(lines)
+
+
+async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
     context = build_context(question)
-    user_content = question if not context else f"Server resource context:\n{context}\n\nQuestion: {question}"
+    directory = build_channel_directory(guild)
+
+    parts = []
+    if directory:
+        parts.append(f"Server channel directory (category: channels):\n{directory}")
+    if context:
+        parts.append(f"Server resource context:\n{context}")
+    parts.append(f"Question: {question}")
+    user_content = "\n\n".join(parts)
+
     completion = await asyncio.to_thread(
         ai_client.chat.completions.create,
         model=MODEL,
@@ -112,7 +141,7 @@ async def on_message(message: discord.Message):
         if question:
             async with message.channel.typing():
                 try:
-                    answer = await ask_ai(question)
+                    answer = await ask_ai(question, message.guild)
                 except Exception as e:
                     answer = f"Sorry, I hit an error talking to the AI: `{e}`"
             await message.reply(format_reply(answer))
@@ -125,7 +154,7 @@ async def on_message(message: discord.Message):
 async def ask(interaction: discord.Interaction, question: str):
     await interaction.response.defer(thinking=True)
     try:
-        answer = await ask_ai(question)
+        answer = await ask_ai(question, interaction.guild)
     except Exception as e:
         answer = f"Sorry, I hit an error talking to the AI: `{e}`"
     await interaction.followup.send(format_reply(answer))
