@@ -14,6 +14,8 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 GUILD_ID = int(os.getenv("GUILD_ID", "1499756701006696478"))
 AUTO_INDEX_LIMIT = int(os.getenv("AUTO_INDEX_LIMIT", "200"))
 RESOURCE_CHANNEL_IDS = {
@@ -34,6 +36,14 @@ ai_client = OpenAI(
     api_key=GEMINI_API_KEY,
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
 )
+
+# Groq is also OpenAI-compatible, and acts as an instant fallback if Gemini's
+# free-tier quota runs out.
+groq_client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1",
+) if GROQ_API_KEY else None
+
 store = ResourceStore()
 
 intents = discord.Intents.default()
@@ -85,13 +95,20 @@ def build_channel_directory(guild: discord.Guild | None) -> str:
 
 
 def friendly_ai_error(e: Exception) -> str:
-    """Turns raw API errors into a readable message instead of dumping JSON."""
+    """Turns raw API errors into a readable message instead of dumping JSON.
+    Only reached if Gemini failed AND the Groq fallback also failed (or isn't configured)."""
     text = str(e)
-    if "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower():
+    if is_rate_limit_error(e):
         return (
-            "API Error , Contact Owner for more details."
+            "I've hit today's free AI usage limit on all configured providers, so I can't "
+            "answer right now. Try again a bit later!"
         )
     return f"Sorry, I hit an error talking to the AI: `{text[:300]}`"
+
+
+def is_rate_limit_error(e: Exception) -> bool:
+    text = str(e).lower()
+    return "429" in text or "resource_exhausted" in text or "quota" in text or "rate limit" in text
 
 
 async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
@@ -106,17 +123,32 @@ async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
     parts.append(f"Question: {question}")
     user_content = "\n\n".join(parts)
 
-    completion = await asyncio.to_thread(
-        ai_client.chat.completions.create,
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        temperature=0.4,
-        max_tokens=1500,
-    )
-    return completion.choices[0].message.content
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    try:
+        completion = await asyncio.to_thread(
+            ai_client.chat.completions.create,
+            model=MODEL,
+            messages=messages,
+            temperature=0.4,
+            max_tokens=1500,
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        # Gemini's free-tier quota ran out (or errored) — instantly retry on Groq.
+        if groq_client is None or not is_rate_limit_error(e):
+            raise
+        completion = await asyncio.to_thread(
+            groq_client.chat.completions.create,
+            model=GROQ_MODEL,
+            messages=messages,
+            temperature=0.4,
+            max_tokens=1500,
+        )
+        return completion.choices[0].message.content
 
 
 AI_DISCLAIMER = "-# This response was **AI Generated**, it may contain incorrect information"
