@@ -13,7 +13,7 @@ load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GUILD_ID = int(os.getenv("GUILD_ID", "1499756701006696478"))
 AUTO_INDEX_LIMIT = int(os.getenv("AUTO_INDEX_LIMIT", "200"))
 RESOURCE_CHANNEL_IDS = {
@@ -82,6 +82,17 @@ def build_channel_directory(guild: discord.Guild | None) -> str:
             continue
         lines.append(f"{cat_name}: " + ", ".join(f"#{c.name}" for c in visible))
     return "\n".join(lines)
+
+
+def friendly_ai_error(e: Exception) -> str:
+    """Turns raw API errors into a readable message instead of dumping JSON."""
+    text = str(e)
+    if "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower():
+        return (
+            "Error"
+            "Error"
+        )
+    return f"Sorry, I hit an error talking to the AI: `{text[:300]}`"
 
 
 async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
@@ -211,9 +222,9 @@ async def on_message(message: discord.Message):
             async with message.channel.typing():
                 try:
                     answer = await ask_ai(question, message.guild)
+                    await message.reply(format_reply(answer))
                 except Exception as e:
-                    answer = f"Sorry, I hit an error talking to the AI: `{e}`"
-            await message.reply(format_reply(answer))
+                    await message.reply(friendly_ai_error(e))
 
     await bot.process_commands(message)
 
@@ -224,9 +235,9 @@ async def ask(interaction: discord.Interaction, question: str):
     await interaction.response.defer(thinking=True)
     try:
         answer = await ask_ai(question, interaction.guild)
+        await interaction.followup.send(format_reply(answer))
     except Exception as e:
-        answer = f"Sorry, I hit an error talking to the AI: `{e}`"
-    await interaction.followup.send(format_reply(answer))
+        await interaction.followup.send(friendly_ai_error(e))
 
 
 async def index_text_channel(channel: discord.TextChannel, limit: int) -> int:
