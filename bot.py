@@ -89,8 +89,7 @@ def friendly_ai_error(e: Exception) -> str:
     text = str(e)
     if "429" in text or "RESOURCE_EXHAUSTED" in text or "quota" in text.lower():
         return (
-            "Error"
-            "Error"
+            "API Error , Contact Owner for more details."
         )
     return f"Sorry, I hit an error talking to the AI: `{text[:300]}`"
 
