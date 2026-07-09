@@ -70,6 +70,18 @@ async def ask_ai(question: str) -> str:
     return completion.choices[0].message.content
 
 
+AI_DISCLAIMER = "-# This response was **AI Generated**, it may contain incorrect information"
+
+
+def format_reply(answer: str) -> str:
+    """Truncates the answer if needed and appends the AI disclaimer, keeping
+    the whole message under Discord's 2000 character limit."""
+    max_answer_len = 2000 - len(AI_DISCLAIMER) - 2  # 2 chars for the blank line
+    if len(answer) > max_answer_len:
+        answer = answer[: max_answer_len - 1].rstrip() + "…"
+    return f"{answer}\n\n{AI_DISCLAIMER}"
+
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
@@ -103,7 +115,7 @@ async def on_message(message: discord.Message):
                     answer = await ask_ai(question)
                 except Exception as e:
                     answer = f"Sorry, I hit an error talking to the AI: `{e}`"
-            await message.reply(answer[:2000])
+            await message.reply(format_reply(answer))
 
     await bot.process_commands(message)
 
@@ -116,7 +128,7 @@ async def ask(interaction: discord.Interaction, question: str):
         answer = await ask_ai(question)
     except Exception as e:
         answer = f"Sorry, I hit an error talking to the AI: `{e}`"
-    await interaction.followup.send(answer[:2000])
+    await interaction.followup.send(format_reply(answer))
 
 
 @bot.tree.command(name="index_channel", description="(Admin) Index past messages in a resource channel")
