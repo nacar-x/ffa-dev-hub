@@ -3,7 +3,7 @@ import os
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -14,8 +14,14 @@ load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GUILD_ID = int(os.getenv("GUILD_ID", "1499756701006696478"))
 RESOURCE_CHANNEL_IDS = {
     int(x) for x in os.getenv("RESOURCE_CHANNEL_IDS", "").split(",") if x.strip().isdigit()
+}
+RESOURCE_CATEGORY_IDS = {
+    int(x)
+    for x in os.getenv("RESOURCE_CATEGORY_IDS", "1517695517587673150,1517706715804598364").split(",")
+    if x.strip().isdigit()
 }
 
 # Gemini exposes an OpenAI-compatible endpoint, so we can reuse the standard
@@ -111,10 +117,41 @@ def format_reply(answer: str) -> str:
     return f"{answer}\n\n{AI_DISCLAIMER}"
 
 
+async def update_presence():
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        return
+    activity = discord.Activity(
+        type=discord.ActivityType.watching,
+        name=f"FFA Dev Hub | {guild.member_count} members",
+    )
+    await bot.change_presence(activity=activity)
+
+
+@tasks.loop(minutes=10)
+async def presence_refresh():
+    await update_presence()
+
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
+    await update_presence()
+    if not presence_refresh.is_running():
+        presence_refresh.start()
     print(f"Logged in as {bot.user} | resources indexed: {store.count()}")
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    if member.guild.id == GUILD_ID:
+        await update_presence()
+
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    if member.guild.id == GUILD_ID:
+        await update_presence()
 
 
 @bot.event
@@ -160,12 +197,9 @@ async def ask(interaction: discord.Interaction, question: str):
     await interaction.followup.send(format_reply(answer))
 
 
-@bot.tree.command(name="index_channel", description="(Admin) Index past messages in a resource channel")
-@app_commands.describe(channel="Channel to scan", limit="How many recent messages to scan (max 500)")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def index_channel(interaction: discord.Interaction, channel: discord.TextChannel, limit: int = 200):
-    await interaction.response.defer(thinking=True)
-    limit = min(limit, 500)
+async def index_text_channel(channel: discord.TextChannel, limit: int) -> int:
+    """Scans a channel's history and adds any new messages to the resource
+    store. Returns how many new messages were added."""
     added = 0
     async for message in channel.history(limit=limit):
         if message.author.bot or not message.content.strip():
@@ -181,9 +215,54 @@ async def index_channel(interaction: discord.Interaction, channel: discord.TextC
             }
         ):
             added += 1
+    return added
+
+
+@bot.tree.command(name="index_channel", description="(Admin) Index past messages in a resource channel")
+@app_commands.describe(channel="Channel to scan", limit="How many recent messages to scan (max 500)")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def index_channel(interaction: discord.Interaction, channel: discord.TextChannel, limit: int = 200):
+    await interaction.response.defer(thinking=True)
+    limit = min(limit, 500)
+    added = await index_text_channel(channel, limit)
     await interaction.followup.send(
         f"Indexed {added} new messages from #{channel.name}. Total resources: {store.count()}"
     )
+
+
+@bot.tree.command(
+    name="index_categories",
+    description="(Admin) Index past messages from every channel in the configured resource categories",
+)
+@app_commands.describe(limit="How many recent messages to scan per channel (max 500)")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def index_categories(interaction: discord.Interaction, limit: int = 200):
+    await interaction.response.defer(thinking=True)
+    limit = min(limit, 500)
+    guild = interaction.guild
+    if guild is None:
+        await interaction.followup.send("This command only works inside a server.")
+        return
+
+    total_added = 0
+    summary_lines = []
+    for category in guild.categories:
+        if category.id not in RESOURCE_CATEGORY_IDS:
+            continue
+        for channel in category.text_channels:
+            added = await index_text_channel(channel, limit)
+            total_added += added
+            summary_lines.append(f"#{channel.name}: +{added}")
+
+    if not summary_lines:
+        await interaction.followup.send(
+            "No matching channels found. Check that RESOURCE_CATEGORY_IDS is set correctly."
+        )
+        return
+
+    summary = "\n".join(summary_lines)
+    reply = f"Indexed {total_added} new messages across {len(summary_lines)} channels:\n{summary}\n\nTotal resources: {store.count()}"
+    await interaction.followup.send(reply[:2000])
 
 
 @bot.tree.command(name="resource_count", description="See how many resources are indexed")
