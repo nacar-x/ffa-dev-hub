@@ -15,6 +15,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GUILD_ID = int(os.getenv("GUILD_ID", "1499756701006696478"))
+AUTO_INDEX_LIMIT = int(os.getenv("AUTO_INDEX_LIMIT", "200"))
 RESOURCE_CHANNEL_IDS = {
     int(x) for x in os.getenv("RESOURCE_CHANNEL_IDS", "").split(",") if x.strip().isdigit()
 }
@@ -123,7 +124,7 @@ async def update_presence():
         return
     activity = discord.Activity(
         type=discord.ActivityType.watching,
-        name=f"{guild.member_count} members",
+        name=f"FFA Dev Hub | {guild.member_count} members",
     )
     await bot.change_presence(activity=activity)
 
@@ -133,12 +134,40 @@ async def presence_refresh():
     await update_presence()
 
 
+_startup_indexed = False
+
+
+async def auto_index_categories():
+    """Indexes every channel in the configured resource categories. Runs
+    once on startup in the background so it doesn't delay bot readiness."""
+    guild = bot.get_guild(GUILD_ID)
+    if guild is None:
+        print("Auto-index skipped: guild not found (check GUILD_ID).")
+        return
+    total_added = 0
+    channels_scanned = 0
+    for category in guild.categories:
+        if category.id not in RESOURCE_CATEGORY_IDS:
+            continue
+        for channel in category.text_channels:
+            total_added += await index_text_channel(channel, AUTO_INDEX_LIMIT)
+            channels_scanned += 1
+    print(
+        f"Auto-indexed {channels_scanned} channels on startup: "
+        f"+{total_added} new resources (total: {store.count()})"
+    )
+
+
 @bot.event
 async def on_ready():
+    global _startup_indexed
     await bot.tree.sync()
     await update_presence()
     if not presence_refresh.is_running():
         presence_refresh.start()
+    if not _startup_indexed:
+        _startup_indexed = True
+        asyncio.create_task(auto_index_categories())
     print(f"Logged in as {bot.user} | resources indexed: {store.count()}")
 
 
