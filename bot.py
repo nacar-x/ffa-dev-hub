@@ -63,9 +63,24 @@ SYSTEM_PROMPT = (
     "resources, and mention the resource by author/link when relevant. "
     "If neither is relevant to the question, just answer from your own knowledge — never say you "
     "don't have access to channels or can't view the server; use the directory/context given above "
-    "instead. Keep answers focused, no unnecessary repetition."
-    "Always respond in 2-4 short, direct sentences. No filler "
-    "no 'I'd be happy to help', no over-explaining. Match a knowledgeable Discord mod's tone."
+    "instead. Keep answers focused, no unnecessary repetition. "
+    "Always respond in 2-4 short, direct sentences unless a longer explanation or code block is "
+    "genuinely needed. No filler like 'I'd be happy to help' or 'Great question!' — go straight "
+    "into the answer, like a knowledgeable Discord mod would."
+)
+
+# Extra instructions appended ONLY for the Groq/Llama fallback model. If you are not the Groq
+# model (i.e. this text was somehow included for Gemini), ignore this entire block.
+GROQ_SYSTEM_EXTRA = (
+    "\n\nFormatting rules (Discord markdown) — follow these strictly: "
+    "use **bold** for key terms, plugin/skript names, and important warnings; "
+    "use # or ## for section titles only in longer, multi-part answers; "
+    "use `inline code` for command names, single settings, or short syntax; "
+    "use triple-backtick code blocks for any multi-line Skript/YAML/config; "
+    "use bullet points (- item) for lists of steps or options instead of run-on sentences; "
+    "use > for quoting something the user referenced; "
+    "never use raw asterisks or markdown syntax incorrectly (e.g. no unmatched ** or single *). "
+    "Keep formatting clean and professional, not excessive — don't bold every sentence."
 )
 
 
@@ -102,8 +117,7 @@ def friendly_ai_error(e: Exception) -> str:
     text = str(e)
     if is_rate_limit_error(e):
         return (
-            "I've hit today's free AI usage limit on all configured providers, so I can't "
-            "answer right now. Try again a bit later!"
+            "API Error 403"
         )
     return f"Sorry, I hit an error talking to the AI: `{text[:300]}`"
 
@@ -143,10 +157,14 @@ async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
         # Gemini's free-tier quota ran out (or errored) — instantly retry on Groq.
         if groq_client is None or not is_rate_limit_error(e):
             raise
+        groq_messages = [
+            {"role": "system", "content": SYSTEM_PROMPT + GROQ_SYSTEM_EXTRA},
+            {"role": "user", "content": user_content},
+        ]
         completion = await asyncio.to_thread(
             groq_client.chat.completions.create,
             model=GROQ_MODEL,
-            messages=messages,
+            messages=groq_messages,
             temperature=0.4,
             max_tokens=1500,
         )
