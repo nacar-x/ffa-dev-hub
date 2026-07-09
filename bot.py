@@ -123,7 +123,7 @@ async def update_presence():
         return
     activity = discord.Activity(
         type=discord.ActivityType.watching,
-        name=f"FFA Dev Hub | {guild.member_count} members",
+        name=f"{guild.member_count} members",
     )
     await bot.change_presence(activity=activity)
 
