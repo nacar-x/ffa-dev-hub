@@ -21,7 +21,10 @@ RESOURCE_CHANNEL_IDS = {
 }
 RESOURCE_CATEGORY_IDS = {
     int(x)
-    for x in os.getenv("RESOURCE_CATEGORY_IDS", "1517695517587673150,1517706715804598364").split(",")
+    for x in os.getenv(
+        "RESOURCE_CATEGORY_IDS",
+        "1517695517587673150,1517706715804598364,1499761054656237658",
+    ).split(",")
     if x.strip().isdigit()
 }
 
@@ -101,7 +104,7 @@ async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
             {"role": "user", "content": user_content},
         ],
         temperature=0.4,
-        max_tokens=800,
+        max_tokens=1500,
     )
     return completion.choices[0].message.content
 
