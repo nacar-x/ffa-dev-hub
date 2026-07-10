@@ -15,7 +15,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 GUILD_ID = int(os.getenv("GUILD_ID", "1499756701006696478"))
 AUTO_INDEX_LIMIT = int(os.getenv("AUTO_INDEX_LIMIT", "200"))
 RESOURCE_CHANNEL_IDS = {
@@ -66,7 +66,14 @@ SYSTEM_PROMPT = (
     "instead. Keep answers focused, no unnecessary repetition. "
     "Always respond in 2-4 short, direct sentences unless a longer explanation or code block is "
     "genuinely needed. No filler like 'I'd be happy to help' or 'Great question!' — go straight "
-    "into the answer, like a knowledgeable Discord mod would."
+    "into the answer, like a knowledgeable Discord mod would. "
+    "Important: only use 'Server resource context' if it is clearly and directly relevant to the "
+    "question — never force a connection between unrelated context and the question just because "
+    "it was provided. If the message you're replying to isn't actually a real question (e.g. it's "
+    "a casual remark, a request directed at another person, or general server chatter with no "
+    "Skript/plugin/resource question in it), say briefly that you're here for Skript/plugin "
+    "questions and don't have anything to add — do not invent an interpretation or guess who or "
+    "what it's about."
 )
 
 # Extra instructions appended ONLY for the Groq/Llama fallback model. If you are not the Groq
@@ -117,7 +124,8 @@ def friendly_ai_error(e: Exception) -> str:
     text = str(e)
     if is_rate_limit_error(e):
         return (
-            "API Error 403"
+            "I've hit today's free AI usage limit on all configured providers, so I can't "
+            "answer right now. Try again a bit later!"
         )
     return f"Sorry, I hit an error talking to the AI: `{text[:300]}`"
 
