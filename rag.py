@@ -51,9 +51,12 @@ class ResourceStore:
     def count(self) -> int:
         return len(self.resources)
 
-    def search(self, query: str, top_k: int = 4):
+    def search(self, query: str, top_k: int = 4, min_score: float = 3.0):
+        """Returns resources relevant to the query. min_score filters out weak/noise
+        matches (e.g. a single shared common word) so unrelated messages don't get
+        pulled in as if they were relevant context."""
         if not self.bm25 or not self.resources:
             return []
         scores = self.bm25.get_scores(_tokenize(query))
         ranked = sorted(zip(self.resources, scores), key=lambda x: x[1], reverse=True)
-        return [r for r, s in ranked[:top_k] if s > 0]
+        return [r for r, s in ranked[:top_k] if s >= min_score]
