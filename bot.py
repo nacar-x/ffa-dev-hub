@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 import discord
 from discord import app_commands
@@ -73,7 +74,15 @@ SYSTEM_PROMPT = (
     "a casual remark, a request directed at another person, or general server chatter with no "
     "Skript/plugin/resource question in it), say briefly that you're here for Skript/plugin "
     "questions and don't have anything to add — do not invent an interpretation or guess who or "
-    "what it's about."
+    "what it's about. "
+    "If a matching channel is flagged as IMPORTANT in the context, always point the user to that "
+    "channel first, before anything else, since it's the most direct source for that specific "
+    "plugin/resource. Never fabricate specific installation steps, config file syntax, download "
+    "sources, or version details for a specific/custom/niche plugin or skript unless that exact "
+    "information is present in the provided context — if you don't have confirmed specifics, say "
+    "you don't have exact details and point them to the matching channel or resource instead of "
+    "guessing. Only give generic install steps (drop the jar in /plugins, restart server) for "
+    "well-known, standard plugins you're confident about."
 )
 
 # Extra instructions appended ONLY for the Groq/Llama fallback model. If you are not the Groq
@@ -89,6 +98,32 @@ GROQ_SYSTEM_EXTRA = (
     "never use raw asterisks or markdown syntax incorrectly (e.g. no unmatched ** or single *). "
     "Keep formatting clean and professional, not excessive — don't bold every sentence."
 )
+
+
+def find_matching_channels(question: str, guild: discord.Guild | None) -> str:
+    """Finds channels whose name matches a word/phrase in the question (e.g. a
+    plugin name that also happens to be a channel name). This is checked
+    directly against live channel names, independent of the resource search,
+    so an exact channel like #altar-s1 always gets surfaced."""
+    if guild is None:
+        return ""
+    q_clean = re.sub(r"[^a-z0-9]+", " ", question.lower())
+    q_words = set(q_clean.split())
+    q_joined = q_clean.replace(" ", "")
+
+    matches = []
+    for channel in guild.text_channels:
+        name_clean = re.sub(r"[^a-z0-9]+", " ", channel.name.lower()).strip()
+        if not name_clean:
+            continue
+        name_words = name_clean.split()
+        if len(name_clean) >= 3 and (
+            all(w in q_words for w in name_words) or name_clean.replace(" ", "") in q_joined
+        ):
+            matches.append(channel)
+    if not matches:
+        return ""
+    return "Channels whose name directly matches this question: " + ", ".join(f"#{c.name}" for c in matches)
 
 
 def build_context(question: str) -> str:
@@ -136,10 +171,13 @@ def is_rate_limit_error(e: Exception) -> bool:
 
 
 async def ask_ai(question: str, guild: discord.Guild | None = None) -> str:
+    channel_match = find_matching_channels(question, guild)
     context = build_context(question)
     directory = build_channel_directory(guild)
 
     parts = []
+    if channel_match:
+        parts.append(f"IMPORTANT — {channel_match}. Always mention this channel first if relevant.")
     if directory:
         parts.append(f"Server channel directory (category: channels):\n{directory}")
     if context:
