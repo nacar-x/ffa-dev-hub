@@ -86,6 +86,8 @@ SYSTEM_PROMPT = (
     "download links, or claims about how the plugin's features work internally — unless that exact "
     "information is present in the provided context. For those specifics, say you don't have "
     "confirmed details and point to the matching channel/resource instead of guessing."
+    "When asked to create a skript / plugin simply denied the request and say"
+    "Skript generation is disabled by the administrator"
 )
 
 # Extra instructions appended ONLY for the Groq/Llama fallback model. If you are not the Groq
