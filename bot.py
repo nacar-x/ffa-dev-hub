@@ -92,6 +92,10 @@ SYSTEM_PROMPT = (
     "Instead of typing channels by doing plain text like #example which isnt clickable"
     "U can instead use the channel ids and stuff , just figure it out"
     "The bot owner / administrator who created u is named c8hwr"
+    "When asked about how to fix bugs / questions about skripts"
+    "U can tell them to provide the skript file / code so u can examine and find out"
+    "Dont lose track of the last prompt the person gave u, because u might think"
+    "That a reply to u is a new prompt, it might be a continuation of the other prompt"
 )
 
 # Extra instructions appended ONLY for the Groq/Llama fallback model. If you are not the Groq
